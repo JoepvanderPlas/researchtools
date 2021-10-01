@@ -1,0 +1,28 @@
+Package: researchtools
+Title: Tools for observational research.
+Version: 0.1
+Authors@R: 
+    person(given = "Joep",
+           family = "van der Plas",
+           role = c("aut", "cre"),
+           email = "j.vdrplas@tilburguniversity.edu",
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: This package is used to help conducting observational research.
+License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
+    license
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2
+Imports: 
+    data.table, 
+    MASS, 
+    broom, 
+    usethis
+Depends: 
+    R (>= 2.10)
+Suggests: 
+    rmarkdown,
+    knitr,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
