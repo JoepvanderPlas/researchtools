@@ -35,6 +35,8 @@ DT_sales_and_prices[251:500, id := 2]
 DT_sales_and_prices[501:750, id := 3]
 DT_sales_and_prices[751:1000, id := 4]
 
+# add weeks
+DT_sales_and_prices[, week := 1:.N, by = id]
 
 # keep only some columns
 DT_sales_and_prices <- DT_sales_and_prices[, .(sales_log, own_price_log, comp_price1_log, comp_price2_log, id)]
