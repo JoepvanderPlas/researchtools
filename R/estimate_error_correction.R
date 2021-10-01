@@ -11,13 +11,13 @@
 # function used to used data.table functions
 usethis::use_data_table()
 
-estimate_error_correction <- function(y, X, data) {
+estimate_error_correction <- function(y, X, data, cross_section) {
 
   # create lag variables
-  data[, paste0(c(y, X), "_lag1") := shift(.SD), .SDcols = c(y, X)] # by = ?? cross section??
+  data[, paste0(c(y, X), "_lag1") := shift(.SD), .SDcols = c(y, X), by = cross_section] 
 
   # create diff variables
-  data[, paste0(c(y, X), "_diff1") := .SD - shift(.SD), .SDcols = c(y, X)] # by = ?? cross section??
+  data[, paste0(c(y, X), "_diff1") := .SD - shift(.SD), .SDcols = c(y, X), by = cross_section] 
 
   # specify formula
   formula <- paste0(paste0(y, "_diff1"), " ~ ", paste0(X, "_diff1", collapse = " + "), " + ", paste0(y, "_lag1")," + ", paste0(X, "_lag1", collapse = " + "))
@@ -60,10 +60,5 @@ estimate_error_correction <- function(y, X, data) {
   return(DT_LT_effect)
 
 }
-
-
-
-
-
 
 

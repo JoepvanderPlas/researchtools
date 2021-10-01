@@ -25,6 +25,6 @@ DT_sales_and_prices
 
 ```{r}
 # example of (i) calling the function and (ii) the output of the function
-#results <- estimate_error_correction(y = "sales_log", X = c("own_price_log", "comp_price1_log", "comp_price2_log"), data = DT_sales_and_prices)
-#results
+results <- estimate_error_correction(y = "sales_log", X = c("own_price_log", "comp_price1_log", "comp_price2_log"), cross_section = "id", data = DT_sales_and_prices)
+results
 ``````

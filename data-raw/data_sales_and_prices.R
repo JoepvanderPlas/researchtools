@@ -7,7 +7,7 @@ mu <- c(10, 10, 10)                                   # Specify the means of the
 # comp price 1 = 10
 # comp price 2 = 10
 
-sigma <- matrix(c(1, 0.1, 0.2,  0.1, 1, 0.3, 0.2, 0.3, 1),  ncol = 3)  # Specify the covariance matrix of the variables
+sigma <- matrix(c(1, 0.1, 0.2, 0.1, 1, 0.3, 0.2, 0.3, 1),  ncol = 3)  # Specify the covariance matrix of the variables
 
 # competitive reaction = 01, 0.2, 0.3 = collinearity
 
@@ -29,4 +29,14 @@ for (i in 2:nrow(DT_sales_and_prices)) {
   DT_sales_and_prices[i, sales_log := 100 + -2.5*own_price_log + 0.5*comp_price1_log + 0.8*comp_price2_log + DT_sales_and_prices[i-1, sales_log*0.5] + error]
 }
 
-use_data(DT_sales_and_prices)
+# add 4 brands 
+DT_sales_and_prices[1:250, id := 1]
+DT_sales_and_prices[251:500, id := 2]
+DT_sales_and_prices[501:750, id := 3]
+DT_sales_and_prices[751:1000, id := 4]
+
+
+# keep only some columns
+DT_sales_and_prices <- DT_sales_and_prices[, .(sales_log, own_price_log, comp_price1_log, comp_price2_log, id)]
+
+usethis::use_data(DT_sales_and_prices, overwrite = T)
