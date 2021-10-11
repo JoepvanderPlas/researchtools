@@ -1,6 +1,13 @@
 #  1 functie en die  een SUR EC model schat + reshape van de data
 
-estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_section, add_copulas = T) {
+# Copula transformation function (see Park and Gupta 2012), based on a variable's ECDF
+make_copula <- function(x) {
+  if (length(unique(x)) %in% c(0,1)) return(as.numeric(rep(NA, length(x))))
+  return(ifelse(ecdf(x)(x)==1, qnorm(1-.0000001), qnorm(ecdf(x)(x))))
+}
+
+# main function
+estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_section, add_copulas = T, praise_winsten_correction = F) {
   
   ## (1) transform the variables
   # create lag variables
@@ -12,21 +19,26 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
   ## (2) delete rows with missing values. Missing are introduced because of lag/diff.
   data <- na.omit(data)
   
-  ## (3) add gausian copulas
+  ## (3) add gaussian copulas
+  if(add_copulas == T) { data[, paste0(X_name, "_copula") := lapply(.SD, make_copula), by = cross_section, .SDcols = X_name] }
   
-  ## (3) reshape the data to (TO DO: document)
+  ## (4) reshape the data to (TO DO: document)
   # stacked X data.table
   formula <- paste0(cross_section, " + ", time, " + ", paste0(y_name, "_diff1"), " ~ ", cross_section)
   # create a vector with (i) all lagged and diffs X's and (ii) lag y
-  vec_all_X_name_and_tranformation_combinations <- c(CJ(X_name, c("_lag1", "_diff1"))[, paste0(X_name, c("_lag1", "_diff1"))], paste0(y_name, "_lag1")) 
-  DT_input_SUR <- dcast(data, formula, value.var = vec_all_X_name_and_tranformation_combinations, fill = 0)
+  if(add_copulas == T) {
+  vec_all_Xs <- c(CJ(X_name, c("_lag1", "_diff1", "_copula"))[, paste0(X_name, c("_lag1", "_diff1", "_copula"))], paste0(y_name, "_lag1")) 
+  } else {
+    vec_all_Xs <- c(CJ(X_name, c("_lag1", "_diff1"))[, paste0(X_name, c("_lag1", "_diff1"))], paste0(y_name, "_lag1")) 
+  }
+  DT_input_SUR <- dcast(data, formula, value.var = vec_all_Xs, fill = 0)
   
   # add cross_section dummies
   inds <- unique(unlist(DT_input_SUR[, ..cross_section]))
   DT_input_SUR[, paste0(cross_section, "_", inds) := lapply(inds, function(x) as.numeric(get(cross_section) == x))]
   
 
-  ## (4) create the objects: (i) index (ii) y and (iii) X. These are needed as input for the function itersur.
+  ## (5) create the objects: (i) index (ii) y and (iii) X. These are needed as input for the function itersur.
   # (i)
   index <- cbind(DT_input_SUR[, ..time], DT_input_SUR[, ..cross_section]) # dit kan ook beter..
   # (ii)
@@ -36,11 +48,15 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
   X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), paste0(cross_section, "_", inds, "$"))), collapse = "|") #this is not super robust..
   X <- as.matrix(DT_input_SUR[, .SD, .SDcols = grep(X_collapsed_for_grep, names(DT_input_SUR))]) 
   
-  ## (5) call itersur
-  mod <- itersur(X = X, Y = y, index = index)  #method="FGLS-Praise-Winsten"
+  ## (6) call itersur
+  if (praise_winsten_correction == F) {
+    mod <- itersur(X = X, Y = y, index = index)
+  } else {
+    mod <- itersur(X = X, Y = y, index = index, method = "FGLS-Praise-Winsten")
+  }
 
   
-  ## (6) compute LT effect 
+  ## (7) compute LT effect 
   # take the coeffs from the object returned by itersur
   DT_coeffs <- setDT(mod@coefficients)
   # drop the z-scores column (redundant)
@@ -85,8 +101,6 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
     cols_to_select <- DT_LT_effect[id == id_counter, variable_id]
     # extra info from the matrix by subsetting on a row and columnS and store in a vector
     vec_var_cov <- mat_var_covar[row_to_select, cols_to_select]
-    # convert the vector to a DT # DELTE REDUDANT (TO DO)
-    #DT_var_cov <- data.table(variable_id = names(vec_var_cov), cov_speed_of_adj_and_indep_var = vec_var_cov)
     # merge with the DT_LT_effect
     DT_LT_effect[id == id_counter, cov_speed_of_adj_and_indep_var := vec_var_cov]
   }
@@ -101,8 +115,10 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
   DT_LT_effect[, se := sqrt( (1/(-coef_speed_of_adj)^2*se_iv_lag1^2) + (coef_iv_lag1^2/(-coef_speed_of_adj)^4*se_speed_of_adj^2) - (2*coef_iv_lag1/(-coef_speed_of_adj)^3*(-cov_speed_of_adj_and_indep_var)) )]
   # compute t_stat
   DT_LT_effect[, t_statistic := effect/se]
+  # compute p_value
   #DT_LT_effect[, p_value := 2 * stats::pt(-abs(t_statistic), df = stats::df.residual(mod))] # df = n - # of estimated coefficients
-  DT_LT_effect <- DT_LT_effect[, .(variable, effect, se, t_statistic)] #p_value
+  # keep only rows about LT effect
+  DT_LT_effect <- cbind(DT_LT_effect[, .(variable, effect, se, t_statistic)], DT_LT_effect[, ..cross_section]) #maybe add p_value
   
 
                    
@@ -126,15 +142,15 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
 }
 
 
-mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), time = "week", cross_section = "id")
-
-
+mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), time = "week", cross_section = "id", add_copulas = T, praise_winsten_correction = T)
 
 
 
 # to do:
-# - add copulas
 # - vergelijk resultaten met systemfit
+# - hoe werkt het als we echt data gebruiken
+# -- singular variables 
+# -- ander soort te weinig variatie in de dataset
 
 
 
