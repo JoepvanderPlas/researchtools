@@ -1,4 +1,4 @@
-# to do: maakt 1 functie en schat een SUR EC model.. + reshape
+#  1 functie en die  een SUR EC model schat + reshape van de data
 
 function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   
@@ -38,7 +38,37 @@ function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   mod <- itersur(X = X, Y = y, index = index)  #method="FGLS-Praise-Winsten"
   
   
-  ## estimate with OLS 
+  ## (6) take LT effect 
+  # take the coeffs from the object returned by itersur
+  DT_coeffs <- setDT(mod@coefficients)
+  # change the variable name to a character (was a factor)
+  DT_coeffs[, variable := as.character(variable)]
+  # create variable_brand combo column. The column variable is actually a variable brand combo name.
+  DT_coeffs[, variable_brand := variable]
+  # extract variable # everything before the last underscore
+  DT_coeffs[, variable := sub("_[^_]+$", "", variable_brand)]
+  # extract the brand # everything after the last underscore
+  DT_coeffs[, (cross_section) := gsub('.*_ ?(\\w+)', '\\1', variable_brand)]
+
+  
+  
+  #mod@varcovar
+  
+  
+  # DUS PAK DE lag X, voeg daar de lag y aan toe, BELANGRIJK: wat doe je van de var-cov matrix?
+  
+  
+  
+  # create a data table with all statistics required to compute the (i) LT effect and (ii) significance
+  DT_LT_effect <- data.table(variable = DT_coeffs[variable %chin% paste0(X_name, "_lag1"), variable],
+                             coef_indep_var = DT_coeffs[variable %chin% paste0(X_name, "_lag1"), coef],
+                             SE_indep_var = DT_coeffs[variable %chin% paste0(X_name, "_lag1"), se],
+                             coef_speed_of_adj = DT_coeffs[variable %like% paste0(y_name, "_lag1"), coef],
+                             SE_speed_of_adj = DT_coeffs[variable == paste0(y_name, "_lag1"), se],
+                             cov_speed_of_adj_and_indep_var = stats::vcov(mod)[paste0(y_name, "_lag1"), paste0(X_name, "_lag1")])
+  
+  
+  ## estimate with OLS to verify the results
   #data[, id := as.factor(id)]
   #formula <- paste0(paste0(y_name, "_diff1"), " ~ ", " 0 + id + ", paste0(X_name, "_diff1:id", collapse = " + "), " + ", paste0(y_name, "_lag1:id")," + ", paste0(X_name, "_lag1:id", collapse = " + "))
   #mod_lm <- stats::lm(formula, data = data)
@@ -56,16 +86,12 @@ mod <- function_temp_name(data = DT_sales_and_prices, y_name = "sales_log", X_na
 
 
 
-# waarom komen er vreemde resultaten uit?? Merk 1 heeft steeds een rare coeffs.
-# vergelijk met lm
-# vergelijk met systemfit
-
 
 
 # to do:
 # - create a better function name
 # - add copulas
-
+# - vergelijk resultaten met systemfit
 
 
 
