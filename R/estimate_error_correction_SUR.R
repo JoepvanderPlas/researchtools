@@ -1,6 +1,6 @@
 #  1 functie en die  een SUR EC model schat + reshape van de data
 
-function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
+estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_section, add_copulas = T) {
   
   ## (1) transform the variables
   # create lag variables
@@ -9,8 +9,10 @@ function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   # create diff variables
   data[, paste0(c(y_name, X_name), "_diff1") := .SD - shift(.SD), .SDcols = c(y_name, X_name), by = cross_section] 
   
-  ## (3) delete rows with missing values. Missing are introduced because of lag/diff.
+  ## (2) delete rows with missing values. Missing are introduced because of lag/diff.
   data <- na.omit(data)
+  
+  ## (3) add gausian copulas
   
   ## (3) reshape the data to (TO DO: document)
   # stacked X data.table
@@ -38,14 +40,14 @@ function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   mod <- itersur(X = X, Y = y, index = index)  #method="FGLS-Praise-Winsten"
 
   
-  ## (6) take LT effect 
+  ## (6) compute LT effect 
   # take the coeffs from the object returned by itersur
   DT_coeffs <- setDT(mod@coefficients)
-  # drop the z-scores
+  # drop the z-scores column (redundant)
   DT_coeffs[, z := NULL]
   # change the variable name to a character (was a factor)
   DT_coeffs[, variable := as.character(variable)]
-  # create variable_id combo column. The column variable is actually a variable brand combo name.
+  # create variable_id combo column. The column variable is actually a variable_id combo name.
   DT_coeffs[, variable_id := variable]
   # extract variable # everything before the last underscore
   DT_coeffs[, variable := sub("_[^_]+$", "", variable_id)]
@@ -53,47 +55,56 @@ function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   DT_coeffs[, (cross_section) := gsub('.*_ ?(\\w+)', '\\1', variable_id)]
   
   
-  # take lagged X variables
+  # create a new DT with only the information about the lagged X
   DT_LT_effect <- DT_coeffs[variable %chin% paste0(X_name, "_lag1")]
+  # rename cols
+  setnames(DT_LT_effect, c("coef", "se"), c("coef_iv_lag1", "se_iv_lag1"))
   
-  
-  # take speed of adjustment (i) coef & (ii) SE
+  # create a new DT with speed of adjustment (i) coef & (ii) SE
   DT_speed_of_adj_temp <- DT_coeffs[variable %like% paste0(y_name, "_lag1")]
   # remove redudant columns
   DT_speed_of_adj_temp[, c("variable", "variable_id" ) := NULL]
-  # 
+  # rename
   setnames(DT_speed_of_adj_temp, c("coef", "se"), c("coef_speed_of_adj", "se_speed_of_adj"))
   
-  # merge information lagged X & speed of adjustment coefficient
+  # merge information lagged X & information speed of adjustment 
   DT_LT_effect <- DT_LT_effect[DT_speed_of_adj_temp, on = cross_section]
   
-  
-  
-  
+  # take the variance covariance matrix of the coeffs from the object returned by itersur 
   mat_var_covar <- mod@varcovar
-  # 
+  # give the rows and columns of the matrix a name
   colnames(mat_var_covar) <- DT_coeffs[, variable_id]
   rownames(mat_var_covar) <- DT_coeffs[, variable_id]
 
   
-  
-  # loop over cross sections
+  # goal: add relevant information from the mat_var_covar to DT_coeffs. Loop over cross sections.
   for(id_counter in unique(DT_LT_effect$id)){
-    # dus subset de rows met precies dit paste0(y_name, "_lag1_", id_counter)
+    # select row with lagged y for the cross section "id_counter"
     row_to_select <- paste0(y_name, "_lag1_", id_counter)
-    # subset the columns met (i) variable %like% paste0(y_name, "_lag1") en (ii) de brand name
+    # select columnS with lagged X for the cross section "id_counter"
     cols_to_select <- DT_LT_effect[id == id_counter, variable_id]
+    # extra info from the matrix by subsetting on a row and columnS and store in a vector
     vec_var_cov <- mat_var_covar[row_to_select, cols_to_select]
-    DT_var_cov <- data.table(variable_id = names(vec_var_cov), cov_speed_of_adj_and_indep_var = vec_var_cov)
-    # merge 
-    merge(DT_LT_effect, DT_var_cov, all=TRUE)
+    # convert the vector to a DT # DELTE REDUDANT (TO DO)
+    #DT_var_cov <- data.table(variable_id = names(vec_var_cov), cov_speed_of_adj_and_indep_var = vec_var_cov)
+    # merge with the DT_LT_effect
+    DT_LT_effect[id == id_counter, cov_speed_of_adj_and_indep_var := vec_var_cov]
   }
   
-  # to do:
-  # (1) check of wat ik hierboven doe juist is
   
-  # (2) compute SE of LT effect
+  # 
+  # delete "log_lag1" in the variable name
+  DT_LT_effect[, variable := gsub('.{0,9}$', '', variable)]
+  # compute the LT effect (= point estimate)
+  DT_LT_effect[, effect := coef_iv_lag1 /-coef_speed_of_adj]
+  # compute SE -- analytical approach
+  DT_LT_effect[, se := sqrt( (1/(-coef_speed_of_adj)^2*se_iv_lag1^2) + (coef_iv_lag1^2/(-coef_speed_of_adj)^4*se_speed_of_adj^2) - (2*coef_iv_lag1/(-coef_speed_of_adj)^3*(-cov_speed_of_adj_and_indep_var)) )]
+  # compute t_stat
+  DT_LT_effect[, t_statistic := effect/se]
+  #DT_LT_effect[, p_value := 2 * stats::pt(-abs(t_statistic), df = stats::df.residual(mod))] # df = n - # of estimated coefficients
+  DT_LT_effect <- DT_LT_effect[, .(variable, effect, se, t_statistic)] #p_value
   
+
                    
                    
                    
@@ -110,19 +121,18 @@ function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   
   
   ## (x) return (TO DO: document) 
-  return(mod) 
+  return(DT_LT_effect) 
 
 }
 
 
-mod <- function_temp_name(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), time = "week", cross_section = "id")
+mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), time = "week", cross_section = "id")
 
 
 
 
 
 # to do:
-# - create a better function name
 # - add copulas
 # - vergelijk resultaten met systemfit
 
