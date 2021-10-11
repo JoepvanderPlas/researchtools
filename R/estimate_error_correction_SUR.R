@@ -15,7 +15,7 @@ function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   ## (3) reshape the data to (TO DO: document)
   # stacked X data.table
   formula <- paste0(cross_section, " + ", time, " + ", paste0(y_name, "_diff1"), " ~ ", cross_section)
-  # create a vector with all lagged and diffs X's and lag y
+  # create a vector with (i) all lagged and diffs X's and (ii) lag y
   vec_all_X_name_and_tranformation_combinations <- c(CJ(X_name, c("_lag1", "_diff1"))[, paste0(X_name, c("_lag1", "_diff1"))], paste0(y_name, "_lag1")) 
   DT_input_SUR <- dcast(data, formula, value.var = vec_all_X_name_and_tranformation_combinations, fill = 0)
   
@@ -30,16 +30,19 @@ function_temp_name <- function(data, y_name, X_name,  time, cross_section) {
   # (ii)
   y <- as.matrix(DT_input_SUR[, get(paste0(y_name, "_diff1"))])
   # (iii)
-  X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"))), collapse = "|") #this is not super robust..
+  # take (i) all lagged and diffs X's and (ii) lag y, and (iii) cross-section specific dummies
+  X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), paste0(cross_section, "_", inds, "$"))), collapse = "|") #this is not super robust..
   X <- as.matrix(DT_input_SUR[, .SD, .SDcols = grep(X_collapsed_for_grep, names(DT_input_SUR))]) 
   
   ## (5) call itersur
   mod <- itersur(X = X, Y = y, index = index)  #method="FGLS-Praise-Winsten"
   
-  formula <- paste0(paste0(y, "_diff1"), " ~ ", paste0(X, "_diff1", collapse = " + "), " + ", paste0(y, "_lag1")," + ", paste0(X, "_lag1", collapse = " + "))
-
-  # estimate model with OLS
-  mod <- stats::lm(formula, data = data)
+  
+  ## estimate with OLS 
+  #data[, id := as.factor(id)]
+  #formula <- paste0(paste0(y_name, "_diff1"), " ~ ", " 0 + id + ", paste0(X_name, "_diff1:id", collapse = " + "), " + ", paste0(y_name, "_lag1:id")," + ", paste0(X_name, "_lag1:id", collapse = " + "))
+  #mod_lm <- stats::lm(formula, data = data)
+  #summary(mod_lm)
   
   
   
