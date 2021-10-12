@@ -22,6 +22,20 @@ keep_cols_with_variation <- function(vec_ts){
   return(sd(cross_section_vec_ts)>0)
 }
 
+# function to detect linear dependent columns. Input is a DT. Output is numeric vector with linear depdent columns -- exclude these columns.
+fun_linear_dependence <- function(DT) {
+  # covert to matrix
+  mat <- as.matrix(DT)
+  # do rank reduction to detect lin. dep. columns
+  rank_rec <- sapply(1:ncol(mat), function(col) qr(mat[ , -col])$rank)
+  # if there is linear dependence: give column numbers
+  if (diff(range(rank_rec)) != 0) {
+    num <- which(rank_rec == max(rank_rec))
+    return(num)
+  }
+  # if there is no lin. dep. columns: return NULL
+}
+
 # main function
 estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time_FE = c(), time, cross_section, add_copulas = T, praise_winsten_correction = F) {
   
@@ -68,6 +82,30 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   
   
   # (b)
+  #### TO DO: doe dit misschien alleen van de X vector -- dus niet van de trend ofzooo.! trend & month zijn lin dependent. MAAR month zit niet in de X matrix..
+  # do rank reduction to detect lin. dep. columns
+  # call function that returns a vector of numbers corresponding to columns to delete
+  col_nums_to_remove <- fun_linear_dependence(DT_input_SUR[, .SD, .SDcols = grep("\\.", names(DT_input_SUR))]) 
+  # if there are linear dependent columns: remove these columns
+  if (!is.null(col_nums_to_remove)) {  DT_input_SUR <- cbind(DT_input_SUR[, .SD, .SDcols = !grep("\\.", names(DT_input_SUR))], DT_input_SUR[, .SD, .SDcols = grep("\\.", names(DT_input_SUR))][, !..col_nums_to_remove]) }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   
   
   
