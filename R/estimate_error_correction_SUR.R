@@ -1,13 +1,29 @@
 #  1 functie en die  een SUR EC model schat + reshape van de data
 
+
+# only send relevant data in the function <- because we omit rows with NA
+
+
+
 # Copula transformation function (see Park and Gupta 2012), based on a variable's ECDF
 make_copula <- function(x) {
   if (length(unique(x)) %in% c(0,1)) return(as.numeric(rep(NA, length(x))))
   return(ifelse(ecdf(x)(x)==1, qnorm(1-.0000001), qnorm(ecdf(x)(x))))
 }
 
+
+# function to keep only columns with variation. Input need to be a numeric vector. Output is T if variation, F otherwise.
+keep_cols_with_variation <- function(vec_ts){
+  # keep only the data regarding 1 cross-section. If the data only has zero's retunr false
+  cross_section_vec_ts <- vec_ts[vec_ts != 0]
+  # if empty vec -- no variation -- return False
+  if(length(cross_section_vec_ts) < 1) {return(F)}
+  # return True if there is variation in the.
+  return(sd(cross_section_vec_ts)>0)
+}
+
 # main function
-estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_section, add_copulas = T, praise_winsten_correction = F) {
+estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time_FE = c(), time, cross_section, add_copulas = T, praise_winsten_correction = F) {
   
   ## (1) transform the variables
   # create lag variables
@@ -24,39 +40,88 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
   
   ## (4) reshape the data to (TO DO: document)
   # stacked X data.table
-  formula <- paste0(cross_section, " + ", time, " + ", paste0(y_name, "_diff1"), " ~ ", cross_section)
-  # create a vector with (i) all lagged and diffs X's and (ii) lag y
-  if(add_copulas == T) {
-  vec_all_Xs <- c(CJ(X_name, c("_lag1", "_diff1", "_copula"))[, paste0(X_name, c("_lag1", "_diff1", "_copula"))], paste0(y_name, "_lag1")) 
+  if(length(time_FE) > 0) { #if time_FE added
+    formula <- paste0(cross_section, " + ", time, " + ", time_FE, " + ", paste0(y_name, "_diff1"), " ~ ", cross_section) 
   } else {
-    vec_all_Xs <- c(CJ(X_name, c("_lag1", "_diff1"))[, paste0(X_name, c("_lag1", "_diff1"))], paste0(y_name, "_lag1")) 
+    formula <- paste0(cross_section, " + ", time, " + ", paste0(y_name, "_diff1"), " ~ ", cross_section)
   }
-  DT_input_SUR <- dcast(data, formula, value.var = vec_all_Xs, fill = 0)
   
+  # create a vector with (i) all lagged and diffs X's, (ii) copulas of X, (iii) lag y, and (iiii) exogenous X
+  if(add_copulas == T) {
+    vec_all_Xs <- c(CJ(X_name, c("_lag1", "_diff1", "_copula"))[, paste0(X_name, c("_lag1", "_diff1", "_copula"))], paste0(y_name, "_lag1"), X_exo_name) 
+  } else { # with the copulas
+    vec_all_Xs <- c(CJ(X_name, c("_lag1", "_diff1"))[, paste0(X_name, c("_lag1", "_diff1"))], paste0(y_name, "_lag1"), X_exo_name) 
+  }
+  DT_input_SUR <- dcast(data, formula, value.var = vec_all_Xs, fill = 0, sep = ".")
+  
+  
+  
+  ## (5) (a) remove columns with no variation and (b) that are linearly dependent (=singular)
+  
+  # (a)
+  # send all X variables <- they all have a "." in their column name
+  vec_keep_cols <- unlist(DT_input_SUR[, lapply(.SD, keep_cols_with_variation), .SDcols = grep("\\.", names(DT_input_SUR))])
+  # keep names in vector that are true
+  keep_cols <- names(vec_keep_cols[vec_keep_cols == T])
+  # keep only columns with variation and bind with column that do not have a "."
+  DT_input_SUR <- cbind(DT_input_SUR[, .SD, .SDcols = !grep("\\.", names(DT_input_SUR))], DT_input_SUR[, .SD, .SDcols = grep("\\.", names(DT_input_SUR))][, ..vec_keep_cols])
+  
+  
+  # (b)
+  
+  
+  
+  
+  ## (6) add (i) cross_section dummies and (ii) cross_section specific time dummies
   # add cross_section dummies
   inds <- unique(unlist(DT_input_SUR[, ..cross_section]))
-  DT_input_SUR[, paste0(cross_section, "_", inds) := lapply(inds, function(x) as.numeric(get(cross_section) == x))]
+  DT_input_SUR[, paste0(cross_section, ".", inds) := lapply(inds, function(x) as.numeric(get(cross_section) == x))]
   
-
-  ## (5) create the objects: (i) index (ii) y and (iii) X. These are needed as input for the function itersur.
+  # add time fixed effects
+  if(length(time_FE) > 0) {
+    ## set the first time period to NA
+    # get first time period
+    first_period <- DT_input_SUR[min(get(time_FE)), get(time_FE)]
+    # create time_id combo FE, without using the first time period
+    DT_input_SUR[get(time_FE) != first_period, time_id_FE := .GRP, by = c(time_FE, cross_section)]
+    
+    ## create the dummies
+    # vector with unique time_id_FE
+    inds_time_id <- DT_input_SUR[!is.na(time_id_FE), unique(time_id_FE)]
+    # create time_id_FE dummies in the DT
+    DT_input_SUR[, paste0(time_FE, ".", inds_time_id) := lapply(inds_time_id, function(x) as.numeric(time_id_FE == x))]   
+    # replace NA's with 0's
+    DT_input_SUR <- setnafill(DT_input_SUR, fill = 0)
+  }
+  
+  
+  
+  
+  
+  
+  ## (7) create the objects: (i) index (ii) y and (iii) X. These are needed as input for the function itersur.
   # (i)
   index <- cbind(DT_input_SUR[, ..time], DT_input_SUR[, ..cross_section]) # dit kan ook beter..
   # (ii)
   y <- as.matrix(DT_input_SUR[, get(paste0(y_name, "_diff1"))])
   # (iii)
   # take (i) all lagged and diffs X's and (ii) lag y, and (iii) cross-section specific dummies
-  X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), paste0(cross_section, "_", inds, "$"))), collapse = "|") #this is not super robust..
+  if(length(time_FE) > 0) {
+    X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), X_exo_name, paste0(cross_section, ".", inds, "$"), paste0(time_FE, ".", inds_time_id, "$"))), collapse = "|") #this is not super robust..
+  } else {
+    X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), X_exo_name, paste0(cross_section, ".", inds, "$"))), collapse = "|") 
+  }
   X <- as.matrix(DT_input_SUR[, .SD, .SDcols = grep(X_collapsed_for_grep, names(DT_input_SUR))]) 
   
-  ## (6) call itersur
+  ## (8) call itersur
   if (praise_winsten_correction == F) {
     mod <- itersur(X = X, Y = y, index = index)
   } else {
     mod <- itersur(X = X, Y = y, index = index, method = "FGLS-Praise-Winsten")
   }
-
   
-  ## (7) compute LT effect 
+  
+  ## (9) compute LT effect 
   # take the coeffs from the object returned by itersur
   DT_coeffs <- setDT(mod@coefficients)
   # drop the z-scores column (redundant)
@@ -66,9 +131,9 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
   # create variable_id combo column. The column variable is actually a variable_id combo name.
   DT_coeffs[, variable_id := variable]
   # extract variable # everything before the last underscore
-  DT_coeffs[, variable := sub("_[^_]+$", "", variable_id)]
+  DT_coeffs[, variable := gsub("\\..*", "", variable_id)]
   # extract the brand # everything after the last underscore
-  DT_coeffs[, (cross_section) := gsub('.*_ ?(\\w+)', '\\1', variable_id)]
+  DT_coeffs[, (cross_section) := gsub(".*\\.", "", variable_id)]
   
   
   # create a new DT with only the information about the lagged X
@@ -91,24 +156,24 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
   # give the rows and columns of the matrix a name
   colnames(mat_var_covar) <- DT_coeffs[, variable_id]
   rownames(mat_var_covar) <- DT_coeffs[, variable_id]
-
+  
   
   # goal: add relevant information from the mat_var_covar to DT_coeffs. Loop over cross sections.
-  for(id_counter in unique(DT_LT_effect$id)){
+  for(id_counter in unlist(unique(DT_LT_effect[, ..cross_section]))){
     # select row with lagged y for the cross section "id_counter"
-    row_to_select <- paste0(y_name, "_lag1_", id_counter)
+    row_to_select <- paste0(y_name, "_lag1.", id_counter)
     # select columnS with lagged X for the cross section "id_counter"
-    cols_to_select <- DT_LT_effect[id == id_counter, variable_id]
+    cols_to_select <- DT_LT_effect[get(cross_section) == id_counter, variable_id]
     # extra info from the matrix by subsetting on a row and columnS and store in a vector
     vec_var_cov <- mat_var_covar[row_to_select, cols_to_select]
     # merge with the DT_LT_effect
-    DT_LT_effect[id == id_counter, cov_speed_of_adj_and_indep_var := vec_var_cov]
+    DT_LT_effect[get(cross_section) == id_counter, cov_speed_of_adj_and_indep_var := vec_var_cov]
   }
   
   
   # 
-  # delete "log_lag1" in the variable name
-  DT_LT_effect[, variable := gsub('.{0,9}$', '', variable)]
+  # delete "lag1" in the variable name
+  DT_LT_effect[, variable := gsub('.{0,5}$', '', variable)]
   # compute the LT effect (= point estimate)
   DT_LT_effect[, effect := coef_iv_lag1 /-coef_speed_of_adj]
   # compute SE -- analytical approach
@@ -120,38 +185,57 @@ estimate_error_correction_SUR <- function(data, y_name, X_name,  time, cross_sec
   # keep only rows about LT effect
   DT_LT_effect <- cbind(DT_LT_effect[, .(variable, effect, se, t_statistic)], DT_LT_effect[, ..cross_section]) #maybe add p_value
   
-
-                   
-                   
-                   
-                   
-                   
-                   
-                   
-  ## estimate with OLS to verify the results
-  #data[, id := as.factor(id)]
-  #formula <- paste0(paste0(y_name, "_diff1"), " ~ ", " 0 + id + ", paste0(X_name, "_diff1:id", collapse = " + "), " + ", paste0(y_name, "_lag1:id")," + ", paste0(X_name, "_lag1:id", collapse = " + "))
-  #mod_lm <- stats::lm(formula, data = data)
-  #summary(mod_lm)
   
   
   
   ## (x) return (TO DO: document) 
   return(DT_LT_effect) 
-
+  
 }
 
+# create a trend variable # do not call it week because week is already used as an index # same for time_FE
+DT_sales_and_prices[, trend := week]
+# create  time fixed effects
+DT_sales_and_prices[week <= 50, period := 1]
+DT_sales_and_prices[week > 50 & week <= 100, period := 2]
+DT_sales_and_prices[week > 100 & week <= 150, period := 3]
+DT_sales_and_prices[week > 150 & week <= 200, period := 4]
+DT_sales_and_prices[week > 200 & week <= 250, period := 5]
 
-mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), time = "week", cross_section = "id", add_copulas = T, praise_winsten_correction = T)
+## TEST TEMP ---
+#data = DT_sales_and_prices
+#y_name = "sales_log"
+#X_name = c("own_price_log", "comp_price1_log", "comp_price2_log")
+#X_exo_name = c("trend")
+#time_FE = "period"
+#time = "week"
+#cross_section = "id"
+#add_copulas = T
+#praise_winsten_correction = T
+
+#####
+
+# call the function
+mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), X_exo_name = c("trend"), time_FE = "period", time = "week", cross_section = "id", add_copulas = T, praise_winsten_correction = T)
+
+
+
+
+
+# in eq. 1, zijn de intercept & quarter perfect colinear??
+#summary(lm(sales_log ~ 0 + own_price_log:as.factor(id) + as.factor(id) + as.factor(id):as.factor(period), data = DT_sales_and_prices))
+# je kunt niet de eeerst periode schatten
+
+
 
 
 
 # to do:
-# - vergelijk resultaten met systemfit
 # - hoe werkt het als we echt data gebruiken
 # -- singular variables 
 # -- ander soort te weinig variatie in de dataset
-
+# - vergelijk resultaten met systemfit
+# - p-value
 
 
 
