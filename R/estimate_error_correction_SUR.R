@@ -69,9 +69,7 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   DT_input_SUR <- dcast(data, formula, value.var = vec_all_Xs, fill = 0, sep = ".")
   
   
-  
   ## (5) (a) remove columns with no variation and (b) that are linearly dependent (=singular)
-  
   # (a)
   # send all X variables <- they all have a "." in their column name
   vec_keep_cols <- unlist(DT_input_SUR[, lapply(.SD, keep_cols_with_variation), .SDcols = grep("\\.", names(DT_input_SUR))])
@@ -82,32 +80,11 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   
   
   # (b)
-  #### TO DO: doe dit misschien alleen van de X vector -- dus niet van de trend ofzooo.! trend & month zijn lin dependent. MAAR month zit niet in de X matrix..
   # do rank reduction to detect lin. dep. columns
   # call function that returns a vector of numbers corresponding to columns to delete
   col_nums_to_remove <- fun_linear_dependence(DT_input_SUR[, .SD, .SDcols = grep("\\.", names(DT_input_SUR))]) 
   # if there are linear dependent columns: remove these columns
   if (!is.null(col_nums_to_remove)) {  DT_input_SUR <- cbind(DT_input_SUR[, .SD, .SDcols = !grep("\\.", names(DT_input_SUR))], DT_input_SUR[, .SD, .SDcols = grep("\\.", names(DT_input_SUR))][, !..col_nums_to_remove]) }
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   
   
   ## (6) add (i) cross_section dummies and (ii) cross_section specific time dummies
@@ -129,12 +106,10 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
     # create time_id_FE dummies in the DT
     DT_input_SUR[, paste0(time_FE, ".", inds_time_id) := lapply(inds_time_id, function(x) as.numeric(time_id_FE == x))]   
     # replace NA's with 0's
-    DT_input_SUR <- setnafill(DT_input_SUR, fill = 0)
+    cols <- DT_input_SUR[, names(.SD), .SDcols = is.numeric]
+    DT_input_SUR[ , (cols) := lapply(.SD, nafill, fill=0), .SDcols = cols]
+    
   }
-  
-  
-  
-  
   
   
   ## (7) create the objects: (i) index (ii) y and (iii) X. These are needed as input for the function itersur.
@@ -187,7 +162,7 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   setnames(DT_speed_of_adj_temp, c("coef", "se"), c("coef_speed_of_adj", "se_speed_of_adj"))
   
   # merge information lagged X & information speed of adjustment 
-  DT_LT_effect <- DT_LT_effect[DT_speed_of_adj_temp, on = cross_section]
+  DT_LT_effect <- DT_LT_effect[DT_speed_of_adj_temp, on = cross_section, nomatch=0]
   
   # take the variance covariance matrix of the coeffs from the object returned by itersur 
   mat_var_covar <- mod@varcovar
@@ -198,6 +173,7 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   
   # goal: add relevant information from the mat_var_covar to DT_coeffs. Loop over cross sections.
   for(id_counter in unlist(unique(DT_LT_effect[, ..cross_section]))){
+    #print(id_counter) #DELETE
     # select row with lagged y for the cross section "id_counter"
     row_to_select <- paste0(y_name, "_lag1.", id_counter)
     # select columnS with lagged X for the cross section "id_counter"
@@ -226,11 +202,15 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   
   
   
-  ## (x) return (TO DO: document) 
+  ## (x) return LT effect
   return(DT_LT_effect) 
   
 }
 
+
+
+
+### Hieronder probeer ik de functie
 # create a trend variable # do not call it week because week is already used as an index # same for time_FE
 DT_sales_and_prices[, trend := week]
 # create  time fixed effects
