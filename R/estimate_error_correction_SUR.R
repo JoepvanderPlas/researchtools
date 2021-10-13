@@ -1,6 +1,3 @@
-#  1 functie en die  een SUR EC model schat + reshape van de data
-
-
 # only send relevant data in the function <- because we omit rows with NA
 
 
@@ -230,6 +227,9 @@ DT_sales_and_prices[week > 100 & week <= 150, period := 3]
 DT_sales_and_prices[week > 150 & week <= 200, period := 4]
 DT_sales_and_prices[week > 200 & week <= 250, period := 5]
 
+
+
+
 ## TEST TEMP ---
 #data = DT_sales_and_prices
 #y_name = "sales_log"
@@ -250,20 +250,8 @@ mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales
 
 
 
-# in eq. 1, zijn de intercept & quarter perfect colinear??
-#summary(lm(sales_log ~ 0 + own_price_log:as.factor(id) + as.factor(id) + as.factor(id):as.factor(period), data = DT_sales_and_prices))
-# je kunt niet de eeerst periode schatten
 
 
-
-
-
-# to do:
-# - hoe werkt het als we echt data gebruiken
-# -- singular variables 
-# -- ander soort te weinig variatie in de dataset
-# - vergelijk resultaten met systemfit
-# - p-value
 
 
 
