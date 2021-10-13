@@ -37,7 +37,7 @@ fun_linear_dependence <- function(DT) {
 }
 
 # main function
-estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time_FE = c(), time, cross_section, add_copulas = T, praise_winsten_correction = F) {
+estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time_FE = c(), time, cross_section, add_copulas = T, praise_winsten_correction = F, maxiter = 1000) {
   
   ## (1) transform the variables
   # create lag variables
@@ -117,6 +117,10 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
     
   }
   
+  # TEMP -- DELETE -- om te proberen of de error ligt aan de exclusive distribution copula
+  #DT_input_SUR <- DT_input_SUR[, .SD, .SDcols = !grep("exclusive_dist_plus1_log_copula", names(DT_input_SUR))]
+  
+  
   
   ## (7) create the objects: (i) index (ii) y and (iii) X. These are needed as input for the function itersur.
   # (i)
@@ -126,7 +130,7 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   # (iii)
   # take (i) all lagged and diffs X's and (ii) lag y, and (iii) cross-section specific dummies
   if(length(time_FE) > 0) {
-    X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), X_exo_name, paste0(cross_section, ".", inds, "$"), paste0(time_FE, ".", inds_time_id, "$"))), collapse = "|") #this is not super robust..
+    X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), X_exo_name, paste0(cross_section, ".", inds, "$"), paste0(time_FE, ".", inds_time_id, "$"))), collapse = "|")
   } else {
     X_collapsed_for_grep <- paste0(paste0("^", c(X_name, paste0(y_name, "_lag1"), X_exo_name, paste0(cross_section, ".", inds, "$"))), collapse = "|") 
   }
@@ -134,9 +138,9 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   
   ## (8) call itersur
   if (praise_winsten_correction == F) {
-    mod <- itersur(X = X, Y = y, index = index)
+    mod <- itersur(X = X, Y = y, index = index, maxiter = maxiter)
   } else {
-    mod <- itersur(X = X, Y = y, index = index, method = "FGLS-Praise-Winsten")
+    mod <- itersur(X = X, Y = y, index = index, maxiter = maxiter, method = "FGLS-Praise-Winsten")
   }
   
   
