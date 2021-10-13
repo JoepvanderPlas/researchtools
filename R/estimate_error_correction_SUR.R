@@ -49,8 +49,13 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   ## (2) delete rows with missing values. Missing are introduced because of lag/diff.
   data <- na.omit(data)
   
-  ## (3) add gaussian copulas
-  if(add_copulas == T) { data[, paste0(X_name, "_copula") := lapply(.SD, make_copula), by = cross_section, .SDcols = X_name] }
+  ## (3) add cross-section specific gaussian copulas
+  if(add_copulas == T) { 
+    data[, paste0(X_name, "_copula") := lapply(.SD, make_copula), by = cross_section, .SDcols = X_name]
+    # for some cross-sections no variation for a variable -- only NAs introduced -- set these to 0 - these will be remove later when checking when there is variation in the data
+    cols <- data[, names(.SD), .SDcols = grepl("_copula", colnames(data))]
+    data[, (cols) := lapply(.SD, nafill, fill=0), .SDcols = cols]
+  }
   
   ## (4) reshape the data to (TO DO: document)
   # stacked X data.table
@@ -67,6 +72,7 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
     vec_all_Xs <- c(CJ(X_name, c("_lag1", "_diff1"))[, paste0(X_name, c("_lag1", "_diff1"))], paste0(y_name, "_lag1"), X_exo_name) 
   }
   DT_input_SUR <- dcast(data, formula, value.var = vec_all_Xs, fill = 0, sep = ".")
+  
   
   
   ## (5) (a) remove columns with no variation and (b) that are linearly dependent (=singular)
