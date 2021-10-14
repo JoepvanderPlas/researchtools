@@ -114,10 +114,6 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
     
   }
   
-  # TEMP -- DELETE -- om te proberen of de error ligt aan de exclusive distribution copula
-  #DT_input_SUR <- DT_input_SUR[, .SD, .SDcols = !grep("exclusive_dist_plus1_log_copula", names(DT_input_SUR))]
-  
-  
   
   ## (7) create the objects: (i) index (ii) y and (iii) X. These are needed as input for the function itersur.
   # (i)
@@ -133,7 +129,48 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   }
   X <- as.matrix(DT_input_SUR[, .SD, .SDcols = grep(X_collapsed_for_grep, names(DT_input_SUR))]) 
   
-  ## (8) call itersur
+  
+  ## (8) We test for the presence of endogeneity per marketing mix instrument 
+  if(add_copulas == T) { 
+    for(x_name in X_name) {
+      
+      # colnames copula focal x
+      col_nums_copulas_focal_x <- grep(paste0("^", x_name, "_copula."), colnames(X))
+      
+      # colnames copula all x
+      col_nums_copulas_all_X <- grep("_copula.", colnames(X))
+      
+      # colnames_to_remove in this iteraction (i.e., non focal copulas)
+      col_nums_to_remove_in_this_iteration <- setdiff(col_nums_copulas_all_X, col_nums_copulas_focal_x)
+      
+      # estimate SUR by testing only for the presence of endogeneity per marketing mix instrument 
+      try (
+        if (praise_winsten_correction == F) {
+          mod <- itersur(X = X[,-col_nums_to_remove_in_this_iteration], Y = y, index = index, maxiter = maxiter)
+        } else {
+          mod <- itersur(X = X[,-col_nums_to_remove_in_this_iteration], Y = y, index = index, maxiter = maxiter, method = "FGLS-Praise-Winsten")
+        }
+      )
+      
+      # if the model is not estimable due to the Guassian copulas, remove the copulas
+      if(inherits(mod, "try-error")) {
+        # 
+        col_names_to_remove <- colnames(X[, col_nums_copulas_focal_x])
+      } else { # else get the insignificant copulas
+        # get coeffs
+        DT_coeffs_endo_test <- setDT(mod@coefficients)
+        # take insignificant coeffs (at alpha = 0.1)
+        col_names_to_remove <- DT_coeffs_endo_test[variable %like% "_copula." & abs(z) < 1.645, variable]
+      }
+      
+      
+      
+      # remove copula columns that are not significant
+      X <- X[, !colnames(X) %in% col_names_to_remove]
+    }
+  }
+  
+  ## (9) call itersur
   if (praise_winsten_correction == F) {
     mod <- itersur(X = X, Y = y, index = index, maxiter = maxiter)
   } else {
@@ -141,7 +178,7 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   }
   
   
-  ## (9) compute LT effect 
+  ## (10) compute LT effect 
   # take the coeffs from the object returned by itersur
   DT_coeffs <- setDT(mod@coefficients)
   # drop the z-scores column (redundant)
@@ -180,7 +217,6 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   
   # goal: add relevant information from the mat_var_covar to DT_coeffs. Loop over cross sections.
   for(id_counter in unlist(unique(DT_LT_effect[, ..cross_section]))){
-    #print(id_counter) #DELETE
     # select row with lagged y for the cross section "id_counter"
     row_to_select <- paste0(y_name, "_lag1.", id_counter)
     # select columnS with lagged X for the cross section "id_counter"
@@ -213,7 +249,6 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   return(DT_LT_effect) 
   
 }
-
 
 
 
