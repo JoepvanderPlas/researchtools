@@ -254,13 +254,13 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
 
 ### Hieronder probeer ik de functie
 # create a trend variable # do not call it week because week is already used as an index # same for time_FE
-DT_sales_and_prices[, trend := week]
+#DT_sales_and_prices[, trend := week]
 # create  time fixed effects
-DT_sales_and_prices[week <= 50, period := 1]
-DT_sales_and_prices[week > 50 & week <= 100, period := 2]
-DT_sales_and_prices[week > 100 & week <= 150, period := 3]
-DT_sales_and_prices[week > 150 & week <= 200, period := 4]
-DT_sales_and_prices[week > 200 & week <= 250, period := 5]
+#DT_sales_and_prices[week <= 50, period := 1]
+#DT_sales_and_prices[week > 50 & week <= 100, period := 2]
+#DT_sales_and_prices[week > 100 & week <= 150, period := 3]
+#DT_sales_and_prices[week > 150 & week <= 200, period := 4]
+#DT_sales_and_prices[week > 200 & week <= 250, period := 5]
 
 
 
@@ -279,7 +279,7 @@ DT_sales_and_prices[week > 200 & week <= 250, period := 5]
 #####
 
 # call the function
-mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), X_exo_name = c("trend"), time_FE = "period", time = "week", cross_section = "id", add_copulas = T, praise_winsten_correction = T)
+#mod <- estimate_error_correction_SUR(data = DT_sales_and_prices, y_name = "sales_log", X_name = c("own_price_log", "comp_price1_log", "comp_price2_log"), X_exo_name = c("trend"), time_FE = "period", time = "week", cross_section = "id", add_copulas = T, praise_winsten_correction = T)
 
 
 
