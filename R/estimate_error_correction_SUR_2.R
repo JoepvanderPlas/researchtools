@@ -138,29 +138,19 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
   copulas_used <- DT_input_SUR[, names(.SD), .SDcols = names(DT_input_SUR) %like% "copula"]
   
   if(add_copulas == T) { 
-    for(x_name in X_name) {
-      
-      # colnames copula focal x
-      col_nums_copulas_focal_x <- grep(paste0("^", x_name, "_copula."), colnames(X))
-      
-      # colnames copula all x
-      col_nums_copulas_all_X <- grep("_copula.", colnames(X))
-      
-      # colnames_to_remove in this iteration (i.e., non focal copulas)
-      col_nums_to_remove_in_this_iteration <- setdiff(col_nums_copulas_all_X, col_nums_copulas_focal_x)
-      
-      # estimate SUR by testing only for the presence of endogeneity per marketing mix instrument 
+      ############# eerst was hier een loop
+      # estimate SUR by testing only for the presence of endogeneity 
       if (praise_winsten_correction == F) {
-        mod <- try( itersur(X = X[,-col_nums_to_remove_in_this_iteration], Y = y, index = index, maxiter = maxiter) )
+        mod <- try( itersur(X = X, Y = y, index = index, maxiter = maxiter) )
       } else {
-        mod <- try( itersur(X = X[,-col_nums_to_remove_in_this_iteration], Y = y, index = index, maxiter = maxiter, method = "FGLS-Praise-Winsten") )
+        mod <- try( itersur(X = x, Y = y, index = index, maxiter = maxiter, method = "FGLS-Praise-Winsten") )
       }
       
       if(inherits(mod, "try-error")) {
-        # if the model is not estimable due to the Guassian copulas, remove the copulas
-        col_names_to_remove <- colnames(X[, col_nums_copulas_focal_x])
-        # save cols that are removed because the model is not estimable
-        copulas_removed_due_to_SUR_not_estimable <- c(copulas_removed_due_to_SUR_not_estimable, col_names_to_remove)
+        copulas_removed_due_to_SUR_not_estimable <- c(copulas_removed_due_to_SUR_not_estimable, paste(country_i, cat, sep = "_"))
+        print("ERRORRR!!!!!!!!!!!!!!!!!!!!")
+        print(cat)
+        print(country_i)
       } else { # else get the insignificant copulas
         # get coeffs
         DT_coeffs_endo_test <- setDT(mod@coefficients)
@@ -169,13 +159,13 @@ estimate_error_correction_SUR <- function(data, y_name, X_name, X_exo_name, time
         # save col that are removed because the model is not estimable
         copulas_removed_due_to_not_sig <- c(copulas_removed_due_to_not_sig, col_names_to_remove)
       }
-      
+      ######
       
       
       # remove copula columns that are not significant
       X <- X[, !colnames(X) %in% col_names_to_remove]
     }
-  }
+
   
   ## (9) call itersur
   
